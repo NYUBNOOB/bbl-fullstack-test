@@ -1,24 +1,25 @@
-import { useAuth0 } from '@auth0/auth0-react';
 import { useLocation } from 'react-router-dom';
 import { Box, CircularProgress, Typography } from '@mui/material';
 import type { ReactNode } from 'react';
+import { useAuth } from './authContext';
 
 interface ProtectedRouteProps {
   children: ReactNode;
 }
 
+/**
+ * Gate for authenticated routes.
+ *
+ * Reads from the unified AuthContext, so behaviour is identical whether
+ * Auth0 is wired up or we're in local-dev bypass.
+ *
+ * SECURITY NOTE:
+ *   Token verification happens in Auth0Provider. This wrapper only READS
+ *   the authentication state; it never trusts client-side flags.
+ */
 export default function ProtectedRoute({ children }: ProtectedRouteProps) {
-  const domain = import.meta.env.VITE_AUTH0_DOMAIN;
-  const clientId = import.meta.env.VITE_AUTH0_CLIENT_ID;
-
-  const auth0NotConfigured = !domain || !clientId;
-
-  const { isAuthenticated, isLoading, loginWithRedirect } = useAuth0();
+  const { isAuthenticated, isLoading, login } = useAuth();
   const location = useLocation();
-
-  if (auth0NotConfigured) {
-    return <>{children}</>;
-  }
 
   if (isLoading) {
     return (
@@ -33,15 +34,15 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
         }}
       >
         <CircularProgress />
-        <Typography children="Loading..." />
+        <Typography>Loading...</Typography>
       </Box>
     );
   }
 
   if (!isAuthenticated) {
-    loginWithRedirect({
-      appState: { returnTo: location.pathname + location.search },
-    });
+    // Trigger login redirect. The returnTo param preserves the path
+    // so the user lands back here after logging in.
+    void login(location.pathname + location.search);
     return null;
   }
 
