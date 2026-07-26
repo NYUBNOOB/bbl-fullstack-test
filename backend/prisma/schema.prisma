@@ -1,0 +1,85 @@
+// ============================================================================
+// Prisma Schema — Bookmark Manager
+//
+// PRIVACY INVARIANT (per CLAUDE.md §1):
+//   Every Collection and every Bookmark strictly belongs to a single owner.
+//   A Bookmark's optional target Collection, if set, MUST be owned by that
+//   same owner. This is enforced at the DATABASE level via a compound
+//   foreign key — see the `BookmarkToCollection` unique/FK pair below — so
+//   no API-level bug can ever associate a bookmark with a collection owned
+//   by a different user.
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Switching to PostgreSQL later = change this block only (e.g. provider = "postgresql").
+// All queries are portable; no SQLite-specific extensions are used.
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ----- User (mock of Auth0 principal) --------------------------------------
+// `id` is intentionally a String so it lines up with Auth0 `sub` when the
+// real Auth0 integration lands — no migration required.
+model User {
+  id           String       @id
+  email        String       @unique
+  displayName  String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  collections  Collection[]
+  bookmarks    Bookmark[]
+}
+
+// ----- Collection -----------------------------------------------------------
+// @@unique([id, ownerId]) exists solely to back the Bookmark compound FK.
+// The single-field `id` primary key remains the canonical identity.
+model Collection {
+  id           String     @id @default(cuid())
+  ownerId      String
+  owner        User       @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  name         String
+  description  String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  bookmarks    Bookmark[]
+
+  @@index([ownerId])
+  @@unique([id, ownerId])
+}
+
+// ----- Bookmark -------------------------------------------------------------
+// The compound relation `collectionId owner -> Collection(id ownerId)` is
+// the invariant: even if the application layer forgets to filter by owner,
+// the DB will reject a bookmark pointing at another user's collection.
+model Bookmark {
+  id             String      @id @default(cuid())
+  ownerId        String
+  owner          User        @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  title          String
+  url            String
+  notes          String?
+
+  // Optional target collection. Null == un-filed bookmark (still owned).
+  // NOTE: `onDelete` is intentionally left as default (NoAction). Prisma
+  // disallows SetNull on this compound FK because Collection.ownerId is
+  // required. The collection-deletion handler must therefore:
+  //   1) explicitly set collectionId=null on its owner's bookmarks, then
+  //   2) delete the collection.
+  // The structural ownership invariant (compound FK [collectionId, ownerId]
+  // -> Collection[id, ownerId]) is unaffected — still enforced at the DB.
+  collectionId   String?
+  collection     Collection? @relation(fields: [collectionId, ownerId], references: [id, ownerId])
+
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@index([ownerId])
+  @@index([collectionId])
+}
