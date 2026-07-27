@@ -1,7 +1,12 @@
-import { Link as RouterLink } from 'react-router-dom';
 import { Typography, Button, Stack, Paper, Box } from '@mui/material';
+import { useAuth0 } from '@auth0/auth0-react';
+import { Activity } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 export default function Home() {
+  const navigate = useNavigate();
+  const { loginWithRedirect, user } = useAuth0()
+
   return (
     <Box>
       <Typography variant="h3" gutterBottom sx={{ fontWeight: 700 }} children="Welcome to BBL Bookmark Manager" />
@@ -11,23 +16,31 @@ export default function Home() {
       </Typography>
 
       <Stack direction="row" spacing={2} sx={{ mt: 3 }}>
-        <Button
-          component={RouterLink}
-          to="/collections"
-          variant="contained"
-          size="large"
-          children="Go to Collections"
-        />
-        <Button
-          component={RouterLink}
-          to="/bookmarks"
-          variant="outlined"
-          size="large"
-          children="Go to Bookmarks"
-        />
+        <Activity mode={!user ? "visible" : "hidden"}>
+          <Button
+            size="large"
+            variant="contained"
+            children="Sign In"
+            onClick={() => loginWithRedirect()}
+          />
+        </Activity>
+        <Activity mode={user ? "visible" : "hidden"}>
+          <Button
+            variant="contained"
+            size="large"
+            children="Go to Collections"
+            onClick={() => navigate("/collections")}
+          />
+          <Button
+            variant="outlined"
+            size="large"
+            children="Go to Bookmarks"
+            onClick={() => navigate("/bookmarks")}
+          />
+        </Activity>
       </Stack>
 
-      <Paper elevation={0} sx={{ mt: 6, p: 3, bgcolor: 'action.hover' }}>
+      <Paper elevation={0} sx={{ mt: 4, p: 3, bgcolor: 'action.hover' }}>
         <Typography variant="h6" gutterBottom children="🛡️ Security Model" />
         <Typography variant="body2">
           Every API request proves ownership via an Auth0 token. Even if the

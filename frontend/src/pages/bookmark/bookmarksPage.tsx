@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import {
   Box,
   Button,
@@ -23,18 +23,19 @@ import {
   Link,
 } from "@mui/material";
 import { Edit as EditIcon, Delete as DeleteIcon, Add as AddIcon, OpenInNew as OpenIcon } from "@mui/icons-material";
-import { useBookmarks } from "../hooks/useBookmarks";
-import { useCollections } from "../hooks/useCollections";
-import { apiClient } from "../api/client";
-import type { Bookmark } from "../types";
+import { useBookmarks } from "@/hooks/useBookmarks";
+import { useCollections } from "@/hooks/useCollections";
+import type { BookmarkDetail } from "@/types/bookmark/bookmarkDetail";
+import { apiClient } from "@/libs/axiosConfig";
+import { FormType } from "@/consts/enum/formType";
 
 export default function BookmarksPage() {
   const { bookmarks, loading, error, refetch } = useBookmarks();
   const { collections } = useCollections();
 
   const [modalOpen, setModalOpen] = useState(false);
-  const [modalMode, setModalMode] = useState<"create" | "edit">("create");
-  const [editingBookmark, setEditingBookmark] = useState<Bookmark | null>(null);
+  const [modalMode, setModalMode] = useState<FormType>(FormType.CREATE);
+  const [editingBookmark, setEditingBookmark] = useState<BookmarkDetail | null>(null);
   const [formData, setFormData] = useState({
     title: "",
     url: "",
@@ -45,19 +46,19 @@ export default function BookmarksPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [deletingBookmark, setDeletingBookmark] = useState<Bookmark | null>(null);
+  const [deletingBookmark, setDeletingBookmark] = useState<BookmarkDetail | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  const handleOpenCreate = () => {
-    setModalMode("create");
+  const handleOpenCreate = useCallback(() => {
+    setModalMode(FormType.CREATE);
     setEditingBookmark(null);
     setFormData({ title: "", url: "", notes: "", collectionId: "" });
     setSubmitError(null);
     setModalOpen(true);
-  };
+  }, []);
 
-  const handleOpenEdit = (bookmark: Bookmark) => {
-    setModalMode("edit");
+  const handleOpenEdit = useCallback((bookmark: BookmarkDetail) => {
+    setModalMode(FormType.EDIT);
     setEditingBookmark(bookmark);
     setFormData({
       title: bookmark.title,
@@ -67,15 +68,15 @@ export default function BookmarksPage() {
     });
     setSubmitError(null);
     setModalOpen(true);
-  };
+  }, []);
 
-  const handleModalClose = () => {
+  const handleModalClose = useCallback(() => {
     setModalOpen(false);
     setEditingBookmark(null);
     setSubmitError(null);
-  };
+  }, []);
 
-  const handleModalSubmit = async (e: React.FormEvent) => {
+  const handleModalSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
     setSubmitError(null);
@@ -88,7 +89,7 @@ export default function BookmarksPage() {
     };
 
     try {
-      if (modalMode === "create") {
+      if (modalMode === FormType.CREATE) {
         await apiClient.post("/bookmarks", payload);
       } else if (modalMode === "edit" && editingBookmark) {
         await apiClient.put(`/bookmarks/${editingBookmark.id}`, payload);
@@ -100,14 +101,14 @@ export default function BookmarksPage() {
     } finally {
       setSubmitting(false);
     }
-  };
+  }, []);
 
-  const handleOpenDelete = (bookmark: Bookmark) => {
+  const handleOpenDelete = useCallback((bookmark: BookmarkDetail) => {
     setDeletingBookmark(bookmark);
     setDeleteDialogOpen(true);
-  };
+  }, []);
 
-  const handleDeleteConfirm = async () => {
+  const handleDeleteConfirm = useCallback(async () => {
     if (!deletingBookmark) return;
 
     setDeleting(true);
@@ -120,7 +121,7 @@ export default function BookmarksPage() {
     } finally {
       setDeleting(false);
     }
-  };
+  }, []);
 
   const getCollectionName = (id: string | null | undefined): string => {
     if (!id) return "";

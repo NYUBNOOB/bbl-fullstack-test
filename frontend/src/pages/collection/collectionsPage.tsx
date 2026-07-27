@@ -20,23 +20,23 @@ import {
   IconButton,
 } from "@mui/material";
 import { Edit as EditIcon, Delete as DeleteIcon, Add as AddIcon } from "@mui/icons-material";
-import { useCollections } from "../hooks/useCollections";
-import { apiClient } from "../api/client";
-import type { Collection } from "../types";
-import { FormType } from "../consts/enum/formType";
+import { useCollections } from "@/hooks/useCollections";
+import { FormType } from "@/consts/enum/formType";
+import type { CollectionDetail } from "@/types/collection/collectionDetail";
+import { apiClient } from "@/libs/axiosConfig";
 
 export default function CollectionsPage() {
   const { collections, loading, error, refetch } = useCollections();
 
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<FormType>(FormType.CREATE);
-  const [editingCollection, setEditingCollection] = useState<Collection | null>(null);
+  const [editingCollection, setEditingCollection] = useState<CollectionDetail | null>(null);
   const [formData, setFormData] = useState({ name: "", description: "" });
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [deletingCollection, setDeletingCollection] = useState<Collection | null>(null);
+  const [deletingCollection, setDeletingCollection] = useState<CollectionDetail | null>(null);
   const [deleting, setDeleting] = useState(false);
 
   const handleOpenCreate = useCallback(() => {
@@ -47,7 +47,7 @@ export default function CollectionsPage() {
     setModalOpen(true);
   }, []);
 
-  const handleOpenEdit = useCallback((collection: Collection) => {
+  const handleOpenEdit = useCallback((collection: CollectionDetail) => {
     setModalMode(FormType.EDIT);
     setEditingCollection(collection);
     setFormData({ name: collection.name, description: collection.description || "" });
@@ -86,7 +86,7 @@ export default function CollectionsPage() {
     }
   }, []);
 
-  const handleOpenDelete = useCallback((collection: Collection) => {
+  const handleOpenDelete = useCallback((collection: CollectionDetail) => {
     setDeletingCollection(collection);
     setDeleteDialogOpen(true);
   }, []);

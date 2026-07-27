@@ -1,8 +1,10 @@
 import { useRoutes } from "react-router-dom"
-import Home from "../pages/Home"
-import CollectionsPage from "../pages/CollectionsPage"
-import BookmarksPage from "../pages/BookmarksPage"
+
 import AppLayout from "../components/layouts/AppLayout"
+import Home from "@/pages/home"
+import CollectionsPage from "@/pages/collection/collectionsPage"
+import BookmarksPage from "@/pages/bookmark/bookmarksPage"
+
 
 export default function Router() {
   const element = useRoutes([
