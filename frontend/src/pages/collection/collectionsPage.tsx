@@ -132,10 +132,20 @@ export default function CollectionsPage() {
                   <TableCell>{collection.name}</TableCell>
                   <TableCell>{collection.description || "—"}</TableCell>
                   <TableCell align="right">
-                    <IconButton onClick={() => handleOpenEdit(collection)} color="primary" size="small">
+                    <IconButton
+                      onClick={() => handleOpenEdit(collection)}
+                      color="primary"
+                      size="small"
+                      aria-label={`Edit ${collection.name}`}
+                    >
                       <EditIcon />
                     </IconButton>
-                    <IconButton onClick={() => handleOpenDelete(collection)} color="error" size="small">
+                    <IconButton
+                      onClick={() => handleOpenDelete(collection)}
+                      color="error"
+                      size="small"
+                      aria-label={`Delete ${collection.name}`}
+                    >
                       <DeleteIcon />
                     </IconButton>
                   </TableCell>

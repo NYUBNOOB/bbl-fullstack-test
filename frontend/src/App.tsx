@@ -4,7 +4,7 @@ import { ThemeProvider } from '@mui/material/styles';
 import { theme } from './theme';
 
 import Router from './router';
-import { BrowserRouter } from 'react-router-dom';
+import { BrowserRouter } from 'react-router';
 import { AuthProvider } from './stores/auth';
 import { AxiosAuthSetup } from './components/auth/axiosAuthSetup';
 

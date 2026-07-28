@@ -1,7 +1,7 @@
 import { Auth0Provider, type AppState } from '@auth0/auth0-react';
 import { Alert, AlertTitle, Box } from '@mui/material';
 import type { ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 
 export default function AuthProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();

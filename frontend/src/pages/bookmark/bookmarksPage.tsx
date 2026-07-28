@@ -146,10 +146,20 @@ export default function BookmarksPage() {
                   </TableCell>
                   <TableCell>{bookmark.notes ? (bookmark.notes.length > 50 ? `${bookmark.notes.slice(0, 50)}...` : bookmark.notes) : "—"}</TableCell>
                   <TableCell align="right">
-                    <IconButton onClick={() => handleOpenEdit(bookmark)} color="primary" size="small">
+                    <IconButton
+                      onClick={() => handleOpenEdit(bookmark)}
+                      color="primary"
+                      size="small"
+                      aria-label={`Edit ${bookmark.title}`}
+                    >
                       <EditIcon />
                     </IconButton>
-                    <IconButton onClick={() => handleOpenDelete(bookmark)} color="error" size="small">
+                    <IconButton
+                      onClick={() => handleOpenDelete(bookmark)}
+                      color="error"
+                      size="small"
+                      aria-label={`Delete ${bookmark.title}`}
+                    >
                       <DeleteIcon />
                     </IconButton>
                   </TableCell>

@@ -1,7 +1,7 @@
 import { Typography, Button, Stack, Paper, Box } from '@mui/material';
 import { useAuth0 } from '@auth0/auth0-react';
 import { Activity } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 
 export default function Home() {
   const navigate = useNavigate();

@@ -1,4 +1,4 @@
-import { NavLink, useNavigate } from "react-router-dom"
+import { NavLink, useNavigate } from "react-router"
 import { AppBar, Toolbar, Typography, Button, Box } from "@mui/material"
 import { useAuth0 } from "@auth0/auth0-react"
 import { Activity } from "react"
