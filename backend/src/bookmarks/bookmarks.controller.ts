@@ -32,7 +32,10 @@ export class BookmarksController {
   }
 
   @Get(':id')
-  async findOne(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+  async findOne(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     return this.bookmarksService.findOneForUser(id, user.sub);
   }
 
@@ -55,7 +58,10 @@ export class BookmarksController {
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async delete(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+  async delete(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     await this.bookmarksService.deleteForUser(id, user.sub);
   }
 }

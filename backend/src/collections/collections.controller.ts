@@ -42,7 +42,10 @@ export class CollectionsController {
    * Returns 404 if not found or not owned (indistinguishable).
    */
   @Get(':id')
-  async findOne(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+  async findOne(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     return this.collectionsService.findOneForUser(id, user.sub);
   }
 
@@ -78,7 +81,10 @@ export class CollectionsController {
    */
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async delete(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+  async delete(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     await this.collectionsService.deleteForUser(id, user.sub);
   }
 }

@@ -1,17 +1,24 @@
-import { useLocation } from 'react-router-dom';
+import { useEffect, useRef, type ReactNode } from 'react';
+import { Outlet, useLocation } from 'react-router-dom';
 import { Box, CircularProgress, Typography } from '@mui/material';
-import type { ReactNode } from 'react';
-import { useAuth } from './authContext';
+import { useAuth0 } from '@auth0/auth0-react';
 
-interface ProtectedRouteProps {
-  children: ReactNode;
-}
-
-export default function ProtectedRoute({ children }: ProtectedRouteProps) {
-  const { isAuthenticated, isLoading, login } = useAuth();
+export default function ProtectedRoute({ children }: { children?: ReactNode }) {
+  const { isAuthenticated, isLoading, loginWithRedirect } = useAuth0();
   const location = useLocation();
 
-  if (isLoading) {
+  const redirecting = useRef(false);
+
+  useEffect(() => {
+    if (isLoading || isAuthenticated || redirecting.current) return;
+    redirecting.current = true;
+
+    void loginWithRedirect({
+      appState: { returnTo: location.pathname + location.search },
+    });
+  }, [isLoading, isAuthenticated, loginWithRedirect, location]);
+
+  if (isLoading || !isAuthenticated) {
     return (
       <Box
         sx={{
@@ -24,15 +31,12 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
         }}
       >
         <CircularProgress />
-        <Typography>Loading...</Typography>
+        <Typography color="text.secondary">
+          {isLoading ? 'Checking your session…' : 'Redirecting to sign in…'}
+        </Typography>
       </Box>
     );
   }
 
-  if (!isAuthenticated) {
-    void login(location.pathname + location.search);
-    return null;
-  }
-
-  return <>{children}</>;
+  return <>{children ?? <Outlet />}</>;
 }

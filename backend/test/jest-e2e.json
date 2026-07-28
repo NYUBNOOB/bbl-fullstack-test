@@ -4,6 +4,22 @@
   "testEnvironment": "node",
   "testRegex": ".e2e-spec.ts$",
   "transform": {
-    "^.+\\.(t|j)s$": "ts-jest"
-  }
+    "^.+\\.(t|j)s$": [
+      "ts-jest",
+      {
+        "tsconfig": {
+          "allowJs": true,
+          "module": "commonjs",
+          "target": "es2022",
+          "esModuleInterop": true,
+          "experimentalDecorators": true,
+          "emitDecoratorMetadata": true,
+          "strictPropertyInitialization": false,
+          "strictNullChecks": true
+        },
+        "diagnostics": { "ignoreCodes": [151002] }
+      }
+    ]
+  },
+  "transformIgnorePatterns": ["/node_modules/(?!jose/)"]
 }

@@ -1,9 +1,4 @@
-export type CreateCollectionRequest = {
+export type CreateUpdateCollectionRequest = {
   name: string;
   description?: string;
 };
-
-export interface UpdateCollectionRequest {
-  name?: string;
-  description?: string;
-}

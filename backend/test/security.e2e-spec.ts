@@ -1,15 +1,22 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
-import { JwtService } from '@nestjs/jwt';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { AUTH_CONFIG } from '../src/auth/auth.config';
+import { SigningKeyProvider } from '../src/auth/signing-key.provider';
 import {
   TEST_USER_A,
   TEST_USER_B,
   TEST_USER_C,
+  TEST_AUTH_CONFIG,
+  StaticSigningKeyProvider,
   bearerFor,
   bearerWithoutSub,
+  bearerForgedKey,
+  bearerAlgConfusion,
+  bearerAlgNone,
+  signToken,
   BEARER_INVALID,
 } from '../src/auth/testing-utils';
 
@@ -39,7 +46,6 @@ import {
 describe('Security E2E Tests', () => {
   let app: INestApplication;
   let prisma: PrismaService;
-  let jwtService: JwtService;
 
   let tokenA: string;
   let tokenB: string;
@@ -51,22 +57,34 @@ describe('Security E2E Tests', () => {
   let bobBookmarkId: string;
 
   beforeAll(async () => {
-    // 1. Boot the app with the real AppModule (includes Prisma + Auth)
+    // 1. Boot the app with the real AppModule (includes Prisma + Auth).
+    //
+    //    Only the *key source* is overridden: instead of fetching Auth0's
+    //    published JWKS over the network we serve a locally generated public
+    //    key. Everything else — signature verification, the RS256 algorithm
+    //    pin, issuer and audience assertions, expiry — is the real guard
+    //    running the real code path.
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideProvider(SigningKeyProvider)
+      .useClass(StaticSigningKeyProvider)
+      .overrideProvider(AUTH_CONFIG)
+      .useValue(TEST_AUTH_CONFIG)
+      .compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }),
+    );
     await app.init();
 
     prisma = moduleFixture.get<PrismaService>(PrismaService);
-    jwtService = moduleFixture.get<JwtService>(JwtService);
 
     // 2. Sign tokens for each test user
-    tokenA = bearerFor(jwtService, TEST_USER_A).replace('Bearer ', '');
-    tokenB = bearerFor(jwtService, TEST_USER_B).replace('Bearer ', '');
-    tokenC = bearerFor(jwtService, TEST_USER_C).replace('Bearer ', '');
+    tokenA = bearerFor(TEST_USER_A).replace('Bearer ', '');
+    tokenB = bearerFor(TEST_USER_B).replace('Bearer ', '');
+    tokenC = bearerFor(TEST_USER_C).replace('Bearer ', '');
 
     // 3. Seed test data: ensure users exist and create collections/bookmarks
     await prisma.user.upsert({
@@ -169,12 +187,191 @@ describe('Security E2E Tests', () => {
     });
 
     it('should reject tokens without a "sub" claim', async () => {
-      const badToken = bearerWithoutSub(jwtService);
+      const badToken = bearerWithoutSub();
       const res = await request(app.getHttpServer())
         .get('/collections')
         .set('Authorization', badToken)
         .send();
       expect(res.status).toBe(401);
+    });
+
+    it('should accept a well-formed RS256 token from the configured tenant', async () => {
+      // Control case: proves the rejections below are caused by the specific
+      // defect under test, not by the verifier rejecting everything.
+      const res = await request(app.getHttpServer())
+        .get('/collections')
+        .set('Authorization', bearerFor(TEST_USER_A))
+        .send();
+      expect(res.status).toBe(200);
+    });
+
+    it('should reject a token signed by a key the tenant never published', async () => {
+      // Correct issuer, audience, shape and `kid` — only the signing key is
+      // wrong. This is what a forged token actually looks like.
+      const res = await request(app.getHttpServer())
+        .get('/collections')
+        .set('Authorization', bearerForgedKey(TEST_USER_A))
+        .send();
+      expect(res.status).toBe(401);
+    });
+
+    it('should reject an algorithm-confusion token (RS256 public key reused as HS256 secret)', async () => {
+      // NOTE ON WHAT THIS PROVES: this test passes even with the guard's
+      // `algorithms` pin removed, because jsonwebtoken v9 independently
+      // refuses to use a PEM asymmetric key for an HMAC algorithm. So it is
+      // a regression test on the *outcome*, not proof that our pin is what
+      // produces it. Kept because the outcome is what actually matters and
+      // a future library swap could quietly remove that built-in defence.
+      const res = await request(app.getHttpServer())
+        .get('/collections')
+        .set('Authorization', bearerAlgConfusion(TEST_USER_A))
+        .send();
+      expect(res.status).toBe(401);
+    });
+
+    it('should reject an unsigned "alg: none" token', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/collections')
+        .set('Authorization', bearerAlgNone(TEST_USER_A))
+        .send();
+      expect(res.status).toBe(401);
+    });
+
+    it('should reject a token minted by a different Auth0 tenant', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/collections')
+        .set(
+          'Authorization',
+          bearerFor(TEST_USER_A, {
+            issuer: 'https://evil-tenant.us.auth0.com/',
+          }),
+        )
+        .send();
+      expect(res.status).toBe(401);
+    });
+
+    it('should reject a token minted for a different API audience', async () => {
+      // e.g. an access token the SPA obtained for the /userinfo endpoint, or
+      // for a sibling API in the same tenant. Valid signature, wrong scope of
+      // authority — must not grant access to this API.
+      const res = await request(app.getHttpServer())
+        .get('/collections')
+        .set(
+          'Authorization',
+          bearerFor(TEST_USER_A, { audience: 'https://some-other-api/' }),
+        )
+        .send();
+      expect(res.status).toBe(401);
+    });
+
+    it('should reject an expired token', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/collections')
+        .set('Authorization', bearerFor(TEST_USER_A, { expiresIn: -60 }))
+        .send();
+      expect(res.status).toBe(401);
+    });
+
+    it('should reject a token whose kid is not in the tenant JWKS', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/collections')
+        .set(
+          'Authorization',
+          bearerFor(TEST_USER_A, { kid: 'rotated-out-key' }),
+        )
+        .send();
+      expect(res.status).toBe(401);
+    });
+
+    it('should not leak whether a rejection was a bad key or a bad signature', async () => {
+      // Distinguishable error text is an oracle: it tells an attacker whether
+      // a `kid` exists, which key rotated, and when to stop guessing.
+      const forged = await request(app.getHttpServer())
+        .get('/collections')
+        .set('Authorization', bearerForgedKey(TEST_USER_A))
+        .send();
+      const unknownKid = await request(app.getHttpServer())
+        .get('/collections')
+        .set(
+          'Authorization',
+          bearerFor(TEST_USER_A, { kid: 'rotated-out-key' }),
+        )
+        .send();
+
+      expect(forged.status).toBe(unknownKid.status);
+      expect(forged.body.message).toBe(unknownKid.body.message);
+    });
+  });
+
+  // ════════════════════════════════════════════════════════════════════════
+  // JIT USER PROVISIONING
+  // ════════════════════════════════════════════════════════════════════════
+
+  describe('Just-in-time user provisioning', () => {
+    // A first-time Auth0 user has a `sub` our database has never seen. Their
+    // very first write must succeed, and must be owned by them alone.
+    const firstTimer = {
+      sub: `auth0|newcomer_${Date.now()}`,
+      email: `newcomer_${Date.now()}@example.com`,
+    };
+
+    afterAll(async () => {
+      await prisma.collection.deleteMany({
+        where: { ownerId: firstTimer.sub },
+      });
+      await prisma.user.deleteMany({ where: { id: firstTimer.sub } });
+    });
+
+    it('creates a User row for a sub seen for the first time', async () => {
+      expect(
+        await prisma.user.findUnique({ where: { id: firstTimer.sub } }),
+      ).toBeNull();
+
+      const res = await request(app.getHttpServer())
+        .post('/collections')
+        .set('Authorization', bearerFor(firstTimer))
+        .send({ name: 'First collection' });
+
+      expect(res.status).toBe(201);
+      expect(res.body.ownerId).toBe(firstTimer.sub);
+
+      const provisioned = await prisma.user.findUnique({
+        where: { id: firstTimer.sub },
+      });
+      expect(provisioned).not.toBeNull();
+      expect(provisioned!.email).toBe(firstTimer.email);
+    });
+
+    it("does not let a newly provisioned user see anyone else's data", async () => {
+      const res = await request(app.getHttpServer())
+        .get('/collections')
+        .set('Authorization', bearerFor(firstTimer))
+        .send();
+
+      expect(res.status).toBe(200);
+      expect(res.body.every((c: any) => c.ownerId === firstTimer.sub)).toBe(
+        true,
+      );
+    });
+
+    it('provisions a user whose token carries no email claim', async () => {
+      // Auth0 connections such as passwordless SMS have no email. Our schema
+      // requires one, so the guard must synthesise a placeholder rather than
+      // reject a legitimate identity.
+      const noEmail = { sub: `auth0|noemail_${Date.now()}`, email: '' };
+      const token = signToken(noEmail).replace(/^Bearer /, '');
+
+      const res = await request(app.getHttpServer())
+        .get('/collections')
+        .set('Authorization', `Bearer ${token}`)
+        .send();
+
+      expect(res.status).toBe(200);
+
+      const row = await prisma.user.findUnique({ where: { id: noEmail.sub } });
+      expect(row).not.toBeNull();
+
+      await prisma.user.deleteMany({ where: { id: noEmail.sub } });
     });
   });
 
@@ -183,7 +380,7 @@ describe('Security E2E Tests', () => {
   // ════════════════════════════════════════════════════════════════════════
 
   describe('Collections — Happy Path', () => {
-    it('GET /collections should return only the authenticated user\'s collections', async () => {
+    it("GET /collections should return only the authenticated user's collections", async () => {
       const res = await request(app.getHttpServer())
         .get('/collections')
         .set('Authorization', `Bearer ${tokenA}`)
@@ -193,10 +390,12 @@ describe('Security E2E Tests', () => {
       expect(Array.isArray(res.body)).toBe(true);
       expect(res.body.length).toBe(1); // Alice has 1 collection
       expect(res.body[0].ownerId).toBe(TEST_USER_A.sub);
-      expect(res.body.every((c: any) => c.ownerId === TEST_USER_A.sub)).toBe(true);
+      expect(res.body.every((c: any) => c.ownerId === TEST_USER_A.sub)).toBe(
+        true,
+      );
     });
 
-    it('GET /collections/:id should return the user\'s own collection', async () => {
+    it("GET /collections/:id should return the user's own collection", async () => {
       const res = await request(app.getHttpServer())
         .get(`/collections/${aliceCollectionId}`)
         .set('Authorization', `Bearer ${tokenA}`)
@@ -221,7 +420,7 @@ describe('Security E2E Tests', () => {
       await prisma.collection.delete({ where: { id: res.body.id } });
     });
 
-    it('PUT /collections/:id should update the user\'s own collection', async () => {
+    it("PUT /collections/:id should update the user's own collection", async () => {
       const res = await request(app.getHttpServer())
         .put(`/collections/${aliceCollectionId}`)
         .set('Authorization', `Bearer ${tokenA}`)
@@ -237,7 +436,7 @@ describe('Security E2E Tests', () => {
       });
     });
 
-    it('DELETE /collections/:id should delete the user\'s own collection', async () => {
+    it("DELETE /collections/:id should delete the user's own collection", async () => {
       // Create a throwaway collection
       const temp = await prisma.collection.create({
         data: { ownerId: TEST_USER_A.sub, name: 'Temp to Delete' },
@@ -251,7 +450,9 @@ describe('Security E2E Tests', () => {
       expect(res.status).toBe(204);
 
       // Verify it's gone
-      const check = await prisma.collection.findUnique({ where: { id: temp.id } });
+      const check = await prisma.collection.findUnique({
+        where: { id: temp.id },
+      });
       expect(check).toBeNull();
     });
   });
@@ -261,7 +462,7 @@ describe('Security E2E Tests', () => {
   // ════════════════════════════════════════════════════════════════════════
 
   describe('Collections — Adversarial Security Tests', () => {
-    it('🛡️ User A should NOT be able to read User B\'s collection by ID', async () => {
+    it("🛡️ User A should NOT be able to read User B's collection by ID", async () => {
       const res = await request(app.getHttpServer())
         .get(`/collections/${bobCollectionId}`)
         .set('Authorization', `Bearer ${tokenA}`)
@@ -272,7 +473,7 @@ describe('Security E2E Tests', () => {
       expect(res.body.message).toMatch(/not found/i);
     });
 
-    it('🛡️ User A should NOT be able to update User B\'s collection', async () => {
+    it("🛡️ User A should NOT be able to update User B's collection", async () => {
       const res = await request(app.getHttpServer())
         .put(`/collections/${bobCollectionId}`)
         .set('Authorization', `Bearer ${tokenA}`)
@@ -281,7 +482,7 @@ describe('Security E2E Tests', () => {
       expect(res.status).toBe(404); // same as "not found" — no info leak
     });
 
-    it('🛡️ User A should NOT be able to delete User B\'s collection', async () => {
+    it("🛡️ User A should NOT be able to delete User B's collection", async () => {
       const res = await request(app.getHttpServer())
         .delete(`/collections/${bobCollectionId}`)
         .set('Authorization', `Bearer ${tokenA}`)
@@ -297,7 +498,7 @@ describe('Security E2E Tests', () => {
       expect(check!.ownerId).toBe(TEST_USER_B.sub);
     });
 
-    it('🛡️ User A should NOT be able to list User B\'s collections', async () => {
+    it("🛡️ User A should NOT be able to list User B's collections", async () => {
       const res = await request(app.getHttpServer())
         .get('/collections')
         .set('Authorization', `Bearer ${tokenA}`)
@@ -305,11 +506,13 @@ describe('Security E2E Tests', () => {
 
       expect(res.status).toBe(200);
       // Alice should see ONLY her own collections, never Bob's
-      expect(res.body.every((c: any) => c.ownerId === TEST_USER_A.sub)).toBe(true);
+      expect(res.body.every((c: any) => c.ownerId === TEST_USER_A.sub)).toBe(
+        true,
+      );
       expect(res.body.some((c: any) => c.id === bobCollectionId)).toBe(false);
     });
 
-    it('🛡️ User C (third user) should NOT be able to read Alice or Bob\'s collections', async () => {
+    it("🛡️ User C (third user) should NOT be able to read Alice or Bob's collections", async () => {
       const resA = await request(app.getHttpServer())
         .get(`/collections/${aliceCollectionId}`)
         .set('Authorization', `Bearer ${tokenC}`)
@@ -330,7 +533,7 @@ describe('Security E2E Tests', () => {
   // ════════════════════════════════════════════════════════════════════════
 
   describe('Bookmarks — Happy Path', () => {
-    it('GET /bookmarks should return only the authenticated user\'s bookmarks', async () => {
+    it("GET /bookmarks should return only the authenticated user's bookmarks", async () => {
       const res = await request(app.getHttpServer())
         .get('/bookmarks')
         .set('Authorization', `Bearer ${tokenA}`)
@@ -340,10 +543,12 @@ describe('Security E2E Tests', () => {
       expect(Array.isArray(res.body)).toBe(true);
       expect(res.body.length).toBe(1); // Alice has 1 bookmark
       expect(res.body[0].ownerId).toBe(TEST_USER_A.sub);
-      expect(res.body.every((b: any) => b.ownerId === TEST_USER_A.sub)).toBe(true);
+      expect(res.body.every((b: any) => b.ownerId === TEST_USER_A.sub)).toBe(
+        true,
+      );
     });
 
-    it('GET /bookmarks/:id should return the user\'s own bookmark', async () => {
+    it("GET /bookmarks/:id should return the user's own bookmark", async () => {
       const res = await request(app.getHttpServer())
         .get(`/bookmarks/${aliceBookmarkId}`)
         .set('Authorization', `Bearer ${tokenA}`)
@@ -390,7 +595,7 @@ describe('Security E2E Tests', () => {
       await prisma.bookmark.delete({ where: { id: res.body.id } });
     });
 
-    it('PUT /bookmarks/:id should update the user\'s own bookmark', async () => {
+    it("PUT /bookmarks/:id should update the user's own bookmark", async () => {
       const res = await request(app.getHttpServer())
         .put(`/bookmarks/${aliceBookmarkId}`)
         .set('Authorization', `Bearer ${tokenA}`)
@@ -444,7 +649,7 @@ describe('Security E2E Tests', () => {
       });
     });
 
-    it('DELETE /bookmarks/:id should delete the user\'s own bookmark', async () => {
+    it("DELETE /bookmarks/:id should delete the user's own bookmark", async () => {
       const temp = await prisma.bookmark.create({
         data: {
           ownerId: TEST_USER_A.sub,
@@ -461,7 +666,9 @@ describe('Security E2E Tests', () => {
       expect(res.status).toBe(204);
 
       // Verify it's gone
-      const check = await prisma.bookmark.findUnique({ where: { id: temp.id } });
+      const check = await prisma.bookmark.findUnique({
+        where: { id: temp.id },
+      });
       expect(check).toBeNull();
     });
   });
@@ -471,7 +678,7 @@ describe('Security E2E Tests', () => {
   // ════════════════════════════════════════════════════════════════════════
 
   describe('Bookmarks — Adversarial Security Tests', () => {
-    it('🛡️ User A should NOT be able to read User B\'s bookmark by ID', async () => {
+    it("🛡️ User A should NOT be able to read User B's bookmark by ID", async () => {
       const res = await request(app.getHttpServer())
         .get(`/bookmarks/${bobBookmarkId}`)
         .set('Authorization', `Bearer ${tokenA}`)
@@ -480,7 +687,7 @@ describe('Security E2E Tests', () => {
       expect(res.status).toBe(404);
     });
 
-    it('🛡️ User A should NOT be able to update User B\'s bookmark', async () => {
+    it("🛡️ User A should NOT be able to update User B's bookmark", async () => {
       const res = await request(app.getHttpServer())
         .put(`/bookmarks/${bobBookmarkId}`)
         .set('Authorization', `Bearer ${tokenA}`)
@@ -489,7 +696,7 @@ describe('Security E2E Tests', () => {
       expect(res.status).toBe(404);
     });
 
-    it('🛡️ User A should NOT be able to delete User B\'s bookmark', async () => {
+    it("🛡️ User A should NOT be able to delete User B's bookmark", async () => {
       const res = await request(app.getHttpServer())
         .delete(`/bookmarks/${bobBookmarkId}`)
         .set('Authorization', `Bearer ${tokenA}`)
@@ -505,23 +712,25 @@ describe('Security E2E Tests', () => {
       expect(check!.ownerId).toBe(TEST_USER_B.sub);
     });
 
-    it('🛡️ User A should NOT be able to list User B\'s bookmarks', async () => {
+    it("🛡️ User A should NOT be able to list User B's bookmarks", async () => {
       const res = await request(app.getHttpServer())
         .get('/bookmarks')
         .set('Authorization', `Bearer ${tokenA}`)
         .send();
 
       expect(res.status).toBe(200);
-      expect(res.body.every((b: any) => b.ownerId === TEST_USER_A.sub)).toBe(true);
+      expect(res.body.every((b: any) => b.ownerId === TEST_USER_A.sub)).toBe(
+        true,
+      );
       expect(res.body.some((b: any) => b.id === bobBookmarkId)).toBe(false);
     });
 
-    it('🛡️ User A should NOT be able to file their bookmark into User B\'s collection', async () => {
+    it("🛡️ User A should NOT be able to file their bookmark into User B's collection", async () => {
       const res = await request(app.getHttpServer())
         .post('/bookmarks')
         .set('Authorization', `Bearer ${tokenA}`)
         .send({
-          title: 'Alice Trying to File in Bob\'s Collection',
+          title: "Alice Trying to File in Bob's Collection",
           url: 'https://alice.example.com',
           collectionId: bobCollectionId, // ← cross-owner violation attempt
         });
@@ -531,7 +740,7 @@ describe('Security E2E Tests', () => {
       expect(res.body.message).toMatch(/cannot link/i);
     });
 
-    it('🛡️ User A should NOT be able to re-file their bookmark into User B\'s collection via PUT', async () => {
+    it("🛡️ User A should NOT be able to re-file their bookmark into User B's collection via PUT", async () => {
       const res = await request(app.getHttpServer())
         .put(`/bookmarks/${aliceBookmarkId}`)
         .set('Authorization', `Bearer ${tokenA}`)
@@ -556,7 +765,7 @@ describe('Security E2E Tests', () => {
       expect(res.status).toBe(400);
     });
 
-    it('🛡️ User C (third user) should NOT be able to read Alice or Bob\'s bookmarks', async () => {
+    it("🛡️ User C (third user) should NOT be able to read Alice or Bob's bookmarks", async () => {
       const resA = await request(app.getHttpServer())
         .get(`/bookmarks/${aliceBookmarkId}`)
         .set('Authorization', `Bearer ${tokenC}`)

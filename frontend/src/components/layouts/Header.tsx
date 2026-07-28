@@ -24,16 +24,14 @@ export default function Header() {
           BBL Bookmarks
         </Typography>
 
-        <Activity mode={user ? "visible" : "hidden"} >
-          <Box sx={{ display: "flex", gap: 1, flexGrow: 1 }}>
-            <NavLink to="/collections" style={({ isActive }) => navLinkStyle({ isActive })}>
-              Collections
-            </NavLink>
-            <NavLink to="/bookmarks" style={({ isActive }) => navLinkStyle({ isActive })}>
-              Bookmarks
-            </NavLink>
-          </Box>
-        </Activity>
+        <Box sx={{ display: "flex", gap: 1, flexGrow: 1 }}>
+          <NavLink to="/collections" style={({ isActive }) => navLinkStyle({ isActive })}>
+            Collections
+          </NavLink>
+          <NavLink to="/bookmarks" style={({ isActive }) => navLinkStyle({ isActive })}>
+            Bookmarks
+          </NavLink>
+        </Box>
 
         <Activity mode={isLoading || user ? "visible" : "hidden"}>
           <Typography variant="body2" sx={{ mr: 2 }}>

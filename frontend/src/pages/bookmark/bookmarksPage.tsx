@@ -23,15 +23,11 @@ import {
   Link,
 } from "@mui/material";
 import { Edit as EditIcon, Delete as DeleteIcon, Add as AddIcon, OpenInNew as OpenIcon } from "@mui/icons-material";
-import { useBookmarks } from "@/hooks/useBookmarks";
-import { useCollections } from "@/hooks/useCollections";
 import type { BookmarkDetail } from "@/types/bookmark/bookmarkDetail";
 import { apiClient } from "@/libs/axiosConfig";
 import { FormType } from "@/consts/enum/formType";
 
 export default function BookmarksPage() {
-  const { bookmarks, loading, error, refetch } = useBookmarks();
-  const { collections } = useCollections();
 
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<FormType>(FormType.CREATE);
@@ -95,7 +91,6 @@ export default function BookmarksPage() {
         await apiClient.put(`/bookmarks/${editingBookmark.id}`, payload);
       }
       handleModalClose();
-      refetch();
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Failed to save bookmark");
     } finally {
@@ -115,7 +110,6 @@ export default function BookmarksPage() {
     try {
       await apiClient.delete(`/bookmarks/${deletingBookmark.id}`);
       setDeleteDialogOpen(false);
-      refetch();
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to delete bookmark");
     } finally {
@@ -144,12 +138,6 @@ export default function BookmarksPage() {
           New Bookmark
         </Button>
       </Box>
-
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
-        </Alert>
-      )}
 
       <TableContainer component={Card}>
         <Table>

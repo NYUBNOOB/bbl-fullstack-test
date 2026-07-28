@@ -1,26 +1,50 @@
-import { Module } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { AuthGuard } from './auth.guard';
+import { AUTH_CONFIG, loadAuthConfig } from './auth.config';
+import {
+  JwksSigningKeyProvider,
+  SigningKeyProvider,
+} from './signing-key.provider';
+import { UserProvisioningService } from './user-provisioning.service';
+import { PrismaModule } from '../prisma/prisma.module';
 
 /**
- * AuthModule configures the mocked JWT infrastructure. In production this
- * is where we swap in Auth0 JWKs + OIDC verification; the AuthGuard and
- * @CurrentUser() decorator stay unchanged.
+ * AuthModule wires real Auth0 verification: RS256 access tokens validated
+ * against the tenant's published JWKS, with issuer and audience asserted.
  *
- * The JWT_SECRET for testing is intentionally hardcoded (see .env.dev) so
- * the test suite can sign helper tokens. Real deployments will read the
- * Auth0 JWKS URI instead.
+ * There is deliberately NO shared-secret fallback and no "dev bypass" branch.
+ * A guard that can be switched into an accept-anything mode by an environment
+ * variable is one misconfigured deploy away from being the whole security
+ * model. Tests instead override SigningKeyProvider with a local keypair,
+ * which exercises the same verification code path.
  */
+@Global()
 @Module({
   imports: [
-    JwtModule.register({
-      global: true,
-      secret: process.env.JWT_SECRET ?? 'bbl-dev-secret-do-not-use-in-prod',
-      signOptions: { expiresIn: '30m' },
-    }),
+    PrismaModule,
+    // No secret here — the key is supplied per-request by the guard, since
+    // which key to use depends on the `kid` in the token being verified.
+    JwtModule.register({ global: true }),
   ],
-  providers: [AuthGuard],
+  providers: [
+    {
+      provide: AUTH_CONFIG,
+      useFactory: () => loadAuthConfig(),
+    },
+    {
+      provide: SigningKeyProvider,
+      useClass: JwksSigningKeyProvider,
+    },
+    UserProvisioningService,
+    AuthGuard,
+  ],
   // Exporting so feature modules (and e2e tests) can apply the guard.
-  exports: [AuthGuard],
+  exports: [
+    AuthGuard,
+    SigningKeyProvider,
+    UserProvisioningService,
+    AUTH_CONFIG,
+  ],
 })
 export class AuthModule {}

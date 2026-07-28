@@ -96,7 +96,10 @@ export class BookmarksService {
     if (dto.url !== undefined) data.url = dto.url;
     if (dto.notes !== undefined) data.notes = dto.notes;
 
-    if (dto.collectionId === null || dto.collectionId === undefined && false) {
+    if (
+      dto.collectionId === null ||
+      (dto.collectionId === undefined && false)
+    ) {
       // Explicitly unfile: set FK to null.
       data.collectionId = null;
     } else if (dto.collectionId) {
@@ -133,7 +136,10 @@ export class BookmarksService {
    * not-found / forbidden shape so as not to leak enumeration info:
    * in both cases we throw BadRequest with a generic message.
    */
-  private async verifyCollectionOwnership(userId: string, collectionId: string) {
+  private async verifyCollectionOwnership(
+    userId: string,
+    collectionId: string,
+  ) {
     const collection = await this.prisma.collection.findFirst({
       where: { id: collectionId },
       select: { ownerId: true },
@@ -141,18 +147,14 @@ export class BookmarksService {
     if (!collection || collection.ownerId !== userId) {
       // Don't distinguish — telling the caller which case is an
       // information leak. Just reject the cross-owner link.
-      throw new BadRequestException(
-        'Cannot link bookmark to this collection',
-      );
+      throw new BadRequestException('Cannot link bookmark to this collection');
     }
   }
 
   private rethrowForeignKeyViolation(err: any): void {
     // Prisma error codes: P2014 (relation violation), P2003 (FK failure)
     if (err?.code === 'P2014' || err?.code === 'P2003') {
-      throw new BadRequestException(
-        'Cannot link bookmark to this collection',
-      );
+      throw new BadRequestException('Cannot link bookmark to this collection');
     }
   }
 }
