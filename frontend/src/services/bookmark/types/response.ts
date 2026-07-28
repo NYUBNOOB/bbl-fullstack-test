@@ -1,3 +1,3 @@
 import type { BookmarkDetail } from "@/types/bookmark/bookmarkDetail";
 
-export type GetBookmarkResponse = BookmarkDetail;
+export type GetBookmarkResponse = BookmarkDetail[];

@@ -10,13 +10,10 @@ import {
   TextField,
 } from "@mui/material";
 import { FormType } from "@/consts/enum/formType";
-import type { CollectionDetail } from "@/types/collection/collectionDetail";
+import type { CollectionDetail, CollectionFormValues } from "@/types/collection/collectionDetail";
 import type { CreateUpdateCollectionRequest } from "@/services/collection/types/request";
 
-type CollectionFormValues = Pick<CollectionDetail, "name" | "description">;
-
 const EMPTY_FORM: CollectionFormValues = { name: "", description: "" };
-
 interface DialogFormCollectionsProps {
   open: boolean;
   modalMode: FormType;
@@ -46,8 +43,6 @@ export default function DialogFormCollections({
       e.preventDefault();
       setSubmitting(true);
       try {
-        // description ในฟอร์มเป็น string เสมอ แต่ API รับ optional —
-        // แปลงค่าว่าง/null เป็น undefined ให้ตรงกับ payload ที่ backend คาดหวัง
         await handleModalSubmit({
           name: formData.name,
           description: formData.description || undefined,

@@ -6,3 +6,8 @@ export type CollectionDetail = {
   createdAt: string;
   updatedAt: string;
 };
+
+export type CollectionFormValues = Pick<
+  CollectionDetail,
+  "name" | "description"
+>;

@@ -5,98 +5,71 @@ import {
   Card,
   Chip,
   CircularProgress,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
-  TextField,
   Typography,
-  Alert,
   IconButton,
-  MenuItem,
   Link,
 } from "@mui/material";
 import { Edit as EditIcon, Delete as DeleteIcon, Add as AddIcon, OpenInNew as OpenIcon } from "@mui/icons-material";
 import type { BookmarkDetail } from "@/types/bookmark/bookmarkDetail";
-import { apiClient } from "@/libs/axiosConfig";
 import { FormType } from "@/consts/enum/formType";
+import type { CreateUpdateBookmarkRequest } from "@/services/bookmark/types/request";
+import { bookmarkService } from "@/services/bookmark";
+import { useLoadInitialData } from "./hooks/useLoadInitialData";
+import DialogFormBookmark from "./components/dialogFormBookmark";
+import DialogDeleteBookmark from "./components/dialogDeleteBookmark";
 
 export default function BookmarksPage() {
-
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<FormType>(FormType.CREATE);
   const [editingBookmark, setEditingBookmark] = useState<BookmarkDetail | null>(null);
-  const [formData, setFormData] = useState({
-    title: "",
-    url: "",
-    notes: "",
-    collectionId: "",
-  });
-  const [submitting, setSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deletingBookmark, setDeletingBookmark] = useState<BookmarkDetail | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  const { bookmarks, collections, reloadBookmarks, loading } = useLoadInitialData();
+
   const handleOpenCreate = useCallback(() => {
     setModalMode(FormType.CREATE);
     setEditingBookmark(null);
-    setFormData({ title: "", url: "", notes: "", collectionId: "" });
-    setSubmitError(null);
     setModalOpen(true);
   }, []);
 
   const handleOpenEdit = useCallback((bookmark: BookmarkDetail) => {
     setModalMode(FormType.EDIT);
     setEditingBookmark(bookmark);
-    setFormData({
-      title: bookmark.title,
-      url: bookmark.url,
-      notes: bookmark.notes || "",
-      collectionId: bookmark.collectionId || "",
-    });
-    setSubmitError(null);
     setModalOpen(true);
   }, []);
 
   const handleModalClose = useCallback(() => {
     setModalOpen(false);
     setEditingBookmark(null);
-    setSubmitError(null);
   }, []);
 
-  const handleModalSubmit = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSubmitting(true);
-    setSubmitError(null);
-
-    const payload = {
-      title: formData.title,
-      url: formData.url,
-      notes: formData.notes || undefined,
-      collectionId: formData.collectionId || undefined,
-    };
-
+  const handleModalSubmit = useCallback(async (value: CreateUpdateBookmarkRequest) => {
     try {
       if (modalMode === FormType.CREATE) {
-        await apiClient.post("/bookmarks", payload);
-      } else if (modalMode === "edit" && editingBookmark) {
-        await apiClient.put(`/bookmarks/${editingBookmark.id}`, payload);
+        await bookmarkService.createBookmark(value);
+      } else if (modalMode === FormType.EDIT && editingBookmark) {
+        await bookmarkService.updateBookmark(editingBookmark.id, value);
       }
+      await reloadBookmarks();
       handleModalClose();
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : "Failed to save bookmark");
-    } finally {
-      setSubmitting(false);
+      alert(err instanceof Error ? err.message : "Failed to save bookmark");
     }
-  }, []);
+  }, [
+    modalMode,
+    editingBookmark,
+    reloadBookmarks,
+    handleModalClose,
+  ]);
 
   const handleOpenDelete = useCallback((bookmark: BookmarkDetail) => {
     setDeletingBookmark(bookmark);
@@ -108,19 +81,16 @@ export default function BookmarksPage() {
 
     setDeleting(true);
     try {
-      await apiClient.delete(`/bookmarks/${deletingBookmark.id}`);
+      await bookmarkService.deleteBookmark(deletingBookmark.id);
       setDeleteDialogOpen(false);
+      setDeletingBookmark(null);
+      await reloadBookmarks();
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to delete bookmark");
     } finally {
       setDeleting(false);
     }
-  }, []);
-
-  const getCollectionName = (id: string | null | undefined): string => {
-    if (!id) return "";
-    return collections.find((c) => c.id === id)?.name || "Unknown";
-  };
+  }, [deletingBookmark, reloadBookmarks]);
 
   if (loading) {
     return (
@@ -168,8 +138,8 @@ export default function BookmarksPage() {
                     </Link>
                   </TableCell>
                   <TableCell>
-                    {bookmark.collectionId ? (
-                      <Chip label={getCollectionName(bookmark.collectionId)} size="small" color="primary" variant="outlined" />
+                    {bookmark.collection ? (
+                      <Chip label={bookmark.collection.name} size="small" color="primary" variant="outlined" />
                     ) : (
                       <Typography color="text.secondary" variant="body2">Unfiled</Typography>
                     )}
@@ -190,83 +160,23 @@ export default function BookmarksPage() {
         </Table>
       </TableContainer>
 
-      <Dialog open={modalOpen} onClose={handleModalClose} maxWidth="sm" fullWidth>
-        <form onSubmit={handleModalSubmit}>
-          <DialogTitle>{modalMode === "create" ? "Create Bookmark" : "Edit Bookmark"}</DialogTitle>
-          <DialogContent>
-            <Box sx={{ display: "flex", flexDirection: "column", gap: 2, mt: 1 }}>
-              {submitError && <Alert severity="error">{submitError}</Alert>}
-              <TextField
-                label="Title"
-                value={formData.title}
-                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                required
-                fullWidth
-                autoFocus
-              />
-              <TextField
-                label="URL"
-                value={formData.url}
-                onChange={(e) => setFormData({ ...formData, url: e.target.value })}
-                required
-                fullWidth
-                type="url"
-                placeholder="https://example.com"
-              />
-              <TextField
-                label="Collection"
-                value={formData.collectionId}
-                onChange={(e) => setFormData({ ...formData, collectionId: e.target.value })}
-                select
-                fullWidth
-                helperText="Leave empty to leave this bookmark unfiled"
-              >
-                <MenuItem value="">
-                  <em>No collection (unfiled)</em>
-                </MenuItem>
-                {collections.map((col) => (
-                  <MenuItem key={col.id} value={col.id}>
-                    {col.name}
-                  </MenuItem>
-                ))}
-              </TextField>
-              <TextField
-                label="Notes"
-                value={formData.notes}
-                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                multiline
-                rows={3}
-                fullWidth
-              />
-            </Box>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={handleModalClose} disabled={submitting}>
-              Cancel
-            </Button>
-            <Button type="submit" variant="contained" disabled={submitting}>
-              {submitting ? <CircularProgress size={20} /> : modalMode === "create" ? "Create" : "Save"}
-            </Button>
-          </DialogActions>
-        </form>
-      </Dialog>
+      <DialogFormBookmark
+        open={modalOpen}
+        modalMode={modalMode}
+        editingBookmark={editingBookmark}
+        collections={collections}
+        onClose={handleModalClose}
+        handleModalSubmit={handleModalSubmit}
+      />
 
-      <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
-        <DialogTitle>Delete Bookmark?</DialogTitle>
-        <DialogContent>
-          <Typography>
-            Are you sure you want to delete "{deletingBookmark?.title}"?
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteDialogOpen(false)} disabled={deleting}>
-            Cancel
-          </Button>
-          <Button onClick={handleDeleteConfirm} color="error" variant="contained" disabled={deleting}>
-            {deleting ? <CircularProgress size={20} /> : "Delete"}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <DialogDeleteBookmark
+        deleteDialogOpen={deleteDialogOpen}
+        deletingBookmark={deletingBookmark}
+        deleting={deleting}
+        setDeleteDialogOpen={setDeleteDialogOpen}
+        handleDeleteConfirm={handleDeleteConfirm}
+      />
+
     </Box>
   );
 }

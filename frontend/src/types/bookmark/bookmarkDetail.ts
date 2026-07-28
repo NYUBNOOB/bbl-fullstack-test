@@ -11,3 +11,8 @@ export type BookmarkDetail = {
   updatedAt: string;
   collection?: CollectionDetail;
 };
+
+export type BookmarkFormValues = Pick<
+  BookmarkDetail,
+  "title" | "url" | "notes" | "collectionId"
+>;
